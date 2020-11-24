@@ -1864,20 +1864,20 @@ is not active."
                              (put-text-property 0 1 'nox--lsp-item item proxy))
                            proxy))
                        items)))))
-           resolved
+          (resolved (make-hash-table))
            (resolve-maybe
             ;; Maybe completion/resolve JSON object `lsp-comp' into
             ;; another JSON object, if at all possible.  Otherwise,
             ;; just return lsp-comp.
             (lambda (lsp-comp)
-              (cond (resolved resolved)
-                    ((and (nox--server-capable :completionProvider
-                                               :resolveProvider)
-                          (plist-get lsp-comp :data))
-                     (setq resolved
-                           (jsonrpc-request server :completionItem/resolve
-                                            lsp-comp :cancel-on-input t)))
-                    (t lsp-comp))))
+              (or (gethash lsp-comp resolved)
+                  (setf (gethash lsp-comp resolved)
+                        (if (and (nox--server-capable :completionProvider
+                                                        :resolveProvider)
+                                 (plist-get lsp-comp :data))
+                            (jsonrpc-request server :completionItem/resolve
+                                             lsp-comp :cancel-on-input t)
+                          lsp-comp)))))
            (bounds (bounds-of-thing-at-point 'symbol)))
       (list
        (or (car bounds) (point))
@@ -1901,11 +1901,14 @@ is not active."
             (funcall proxies)))))
        :annotation-function
        (lambda (proxy)
-         (nox--dbind ((CompletionItem) label kind)
+         (nox--dbind ((CompletionItem) label kind detail)
              (get-text-property 0 'nox--lsp-item proxy)
            (let* ((label (and (stringp label)
                               (not (string= label ""))
                               label))
+                  (detail (and (stringp detail)
+                               (not (string= detail ""))
+                               detail))
                   (annotation label)
                   (annotation-length (length annotation))
                   (kind-name (cdr (assoc kind nox--kind-names))))
@@ -1913,9 +1916,11 @@ is not active."
                (format " [%s] %s"
                        kind-name
                        (propertize
+                        (if (not detail)
+                            ""
                         (if (> annotation-length nox-candidate-annotation-limit)
                             (concat (substring annotation 0 nox-candidate-annotation-limit) " ...")
-                          annotation)
+                          annotation))
                         'face 'font-lock-function-name-face))))))
        :company-doc-buffer
        (lambda (proxy)
@@ -2331,6 +2336,8 @@ influence of C1 on the result."
          (list "pyls"))
         ((string-equal nox-python-server "pyright")
          (list "pyright-langserver" "--stdio"))
+        ((string-equal nox-python-server "jedi")
+         (list "jedi-language-server"))
         ))
 
 ;;; php specific
